@@ -1,14 +1,47 @@
 import numpy as np
+from time import time
 
-class JMLE:
+class JMLE_base:
 
-    def __init__(self, logit_conv, resid_conv, n_iter):
+    def __init__(
+            self, resp_mat, person_status, item_status, global_person_status, global_item_status,
+            anchor_persons, anchor_items, logit_conv, resid_conv, n_iter
+    ):
+        '''
+
+        :param resp_mat: np.array, response matrix of 1, 0. axis 0=persons, axis1=items
+        :param person_status: np.array 1d, 0=anchor persons, 1=uncalibrated persons
+        :param item_status: np.array 1d, 0=anchor items, 1=uncalibrated item
+        :param global_person_status: float, 0 if no persons are anchored and 1 if persons are anchored
+        :param global_item_status: float, 0 if no items are anchored and 1 if items are anchored
+        :param anchor_persons: np.array, anchor persons values at corresponding index. Unanchored perons must = 0
+        :param anchor_items: np.array, anchor item values at corresponding index. Unanchored items must = 0
+        :param logit_conv: float, largest change in updates across people and items. once smaller than this value, the algorithm stops
+        :param resid_conv: float, largest residual across people and items. once smaller than this value, the algorithm stops
+        :param n_iter: int, total number of iterations before algorithm stops
+        '''
+        if not resp_mat.shape[0] == len(person_status) == len(anchor_persons):
+            raise ValueError("resp_mat along axis 0, __len__ of person_status and __len__ of anchor_persons must match.")
+
+        if not resp_mat.shape[1] == len(item_status) == len(anchor_items):
+            raise ValueError("resp_mat along axis 1, __len__ of item_status and __len__ of anchor_items must match.")
+
+
+        self.resp_mat = resp_mat
+        self.person_status = person_status
+        self.item_status = item_status
+        self.global_person_status = global_person_status
+        self.global_item_status = global_item_status
+        self.anchor_persons = anchor_persons
+        self.anchor_items = anchor_items
         self.logit_conv = logit_conv
         self.resid_conv = resid_conv
         self.n_iter = n_iter
+        self.variances_matrix = np.vectorize(self.variances_matrix)
 
     ########################### MATRIX FUNCTIONS ##############################
     ######### define Rasch function to create probabilities matrix
+
     def rasch(self, person, item):
         it_per = person - item
         return np.exp(it_per) / (1 + np.exp(it_per))
@@ -40,7 +73,7 @@ class JMLE:
         '''
         return probabilities_matrix * (1 - probabilities_matrix)
 
-
+        #self.variances_matrix = np.vectorize(self.variances_matrix)
 
     ##### define funciton to create residuals matrix
     def residuals_matrix(self, response_matrix, probabilities_matrix):
@@ -54,8 +87,7 @@ class JMLE:
         ######################### ESTIMATOR FUNCTIONS #############################
 
     ## Calculate initial difficulties
-    def initial_difficulties(self, response_matrix, anchor_difficulties,
-                             global_item_status, item_status):
+    def initial_difficulties(self, response_matrix, anchor_difficulties):
         prop = response_matrix.mean(axis=0)
         init_diffs = np.log((1 - prop) / prop)
 
@@ -111,4 +143,60 @@ class JMLE:
         new = np.concatenate((new_abilities, new_difficulties))
         return (max(abs(old - new)))
 
-self.variances_matrix = np.vectorize(self.variances_matrix)
+
+    def estimate(self):
+        start = time()
+
+        #TODO must find out why there is a +1 here
+        resid_mat = self.resid_conv + 1
+        logit_change = self.logit_conv + 1
+
+        ######## start estimation
+        abilities = self.initial_abilities(self.resp_mat)
+        difficulties = self.initial_difficulties(self.resp_mat, self.anchor_difficulties,
+                                                 self.global_item_status, self.item_status)
+        ## initialize printables
+        iter_count = 1
+
+        while logit_change > self.logit_convergence and np.max(resid_mat) > self.residual_convergence:
+            # assign old abilities to check convergence at end of iteration
+            abilities_old = abilities
+            difficulties_old = difficulties
+
+            # calculate matrices used in iteration
+            prob_mat = self.probability_matrix(abilities, difficulties)
+            var_mat = self.variances_matrix(prob_mat)
+            resid_mat = self.residuals_matrix(self.response_matrix, prob_mat)
+
+            # re-estimate difficulties and abilities
+            abilities = self.update_abilities(abilities, resid_mat, var_mat)
+            difficulties = self.update_difficulties(difficulties, resid_mat, var_mat,
+                                                    self.global_item_status, self.item_status)
+
+            logit_change = self.max_logit_change(abilities_old, difficulties_old,
+                                                 abilities, difficulties)
+
+            iter_count += 1
+
+        finish = time()
+
+        self.abilities_logits = abilities
+        self.difficulties_logits = difficulties
+        self.n_iterations = iter_count
+        self.n_persons_n_items = self.response_matrix.shape
+        self.estimation_time = finish - start
+        self.estimator_runs = self.estimator_runs + 1
+        #self.person_sem = self.sem(var_mat, 'persons')
+        #self.item_sem = self.sem(var_mat, 'items')
+        #self.person_infit = self.infit(resid_mat, var_mat, 'persons')
+        #self.item_infit = self.infit(resid_mat, var_mat, 'items')
+        #self.person_outfit, self.item_outfit = self.outfit(resid_mat, var_mat)
+        #self.item_disp_logits = self.displacement(resid_mat, var_mat, 'items')
+
+        print('Persons - items:', *self.n_persons_n_items)
+        print('Iterations:', self.n_iterations)
+        print('Estimation time: {} seconds'.format(np.round(self.estimation_time, 2)))
+
+        ## post estimation reporting
+        #self.report_tables.append(self.reporting_table())
+

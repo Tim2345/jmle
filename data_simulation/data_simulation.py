@@ -1,11 +1,13 @@
 import numpy as np
 
-class DataSimulator:
-    def __init__(self, n_items, n_persons):
-
-        self.n_items = n_items
-        self.n_persons = n_persons
-
+class DataSimulator(object):
+    # def __init__(self, n_items, n_persons):
+    #
+    #     self.n_items = n_items
+    #     self.n_persons = n_persons
+    #TODO look into changing this class to use class methods and use __init__ . currently am not because need to find a good way to
+    # pass through the 'size' argument for sample_items_and_persons
+    #
     def sample_items_and_persons(self, dist, *args, **kwargs):
         '''
         simple wrapper method for all numpy  random distribution methods
@@ -51,7 +53,7 @@ class DataSimulator:
     def rasch_response_matrix(self, persons, items, probabilities=False):
         '''
         Method to simulate response matrix given persons and items. This method uses the rasch model to output probabilties
-        which are then used to generate probabilistic response patterns using numpy.binomial
+        which are then used to generate response patterns using numpy.binomial
         :param persons: np.array, or scalar of person abilities
         :param items: np.array or scalar of item difficulties
         :param probabilities, bool, if probabilities=True, returns tuple of response matrix and probabilties.
