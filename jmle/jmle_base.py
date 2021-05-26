@@ -41,7 +41,6 @@ class JMLE_base:
 
     ########################### MATRIX FUNCTIONS ##############################
     ######### define Rasch function to create probabilities matrix
-
     def rasch(self, person, item):
         it_per = person - item
         return np.exp(it_per) / (1 + np.exp(it_per))
