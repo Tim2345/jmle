@@ -1,5 +1,6 @@
 import numpy as np
 from time import time
+from numpy import ma
 
 class JMLE_base:
 
@@ -62,9 +63,8 @@ class JMLE_base:
         '''
         n_items = len(difficulties)
         n_persons = len(abilities)
-
         # this was originally masked
-        probabilities = np.array([self.rasch(person, item) for person in abilities for item in difficulties])
+        probabilities = ma.masked_invalid([self.rasch(person, item) for person in abilities for item in difficulties])
 
         return probabilities.reshape(n_persons, n_items)
 
@@ -93,18 +93,22 @@ class JMLE_base:
         ######################### ESTIMATOR FUNCTIONS #############################
 
     ## Calculate initial estimates
-    def initial_estimates(self, response_matrix, anchor_difficulties, axis):
+    def initial_estimates(self, response_matrix, anchors, axis):
         prop = response_matrix.mean(axis=axis)
-        init_diffs = np.log((1 - prop) / prop)
 
-        init_diffs_mean = np.mean(init_diffs)
-        adjusted_difficulties = init_diffs - init_diffs_mean
-        np.put(adjusted_difficulties,
-               np.where(anchor_difficulties != 0),
-               anchor_difficulties[np.where(anchor_difficulties != 0)])
+        if axis == 1:
+            init_ests = np.log(prop / (1 - prop))
 
-        return adjusted_difficulties
+        elif axis == 0:
+            init_ests = np.log((1 - prop) / prop)
+            init_ests_mean = np.mean(init_ests)
+            init_ests = init_ests - init_ests_mean
 
+        np.put(init_ests,
+               np.where(anchors != 0),
+               anchors[np.where(anchors != 0)])
+
+        return init_ests
 
     ## Update estimates
     def update_estimates(self, difficulties, residual_matrix, variance_matrix,
@@ -130,22 +134,21 @@ class JMLE_base:
     def max_logit_change(self, old_abilities, old_difficulties, new_abilities, new_difficulties):
         old = np.concatenate((old_abilities, old_difficulties))
         new = np.concatenate((new_abilities, new_difficulties))
+
         return (max(abs(old - new)))
 
 
     def estimate(self):
         start = time()
 
-        #TODO must find out why there is a +1 here (Scaling from inital version?)
+        # TODO must find out why there is a +1 here (Scaling from inital version?)
         resid_mat = self.resid_conv + 1
         logit_change = self.logit_conv + 1
 
         ######## start estimation
-        abilities = self.initial_estimates(self.resp_mat, self.anchor_persons,
-                                           self.global_person_status, self.person_status)
+        abilities = self.initial_estimates(self.resp_mat, self.anchor_persons, axis=1)
+        difficulties = self.initial_estimates(self.resp_mat, self.anchor_items, axis=0)
 
-        difficulties = self.initial_estimtates(self.resp_mat, self.anchor_items,
-                                                 self.global_item_status, self.item_status)
         ## initialize printables
         iter_count = 1
 
@@ -161,10 +164,11 @@ class JMLE_base:
 
             # re-estimate difficulties and abilities
             abilities = self.update_estimates(abilities, resid_mat, var_mat,
-                                              self.global_person_status, self.person_status)
+                                              self.global_person_status, self.person_status, axis=1)
 
             difficulties = self.update_estimates(difficulties, resid_mat, var_mat,
-                                                    self.global_item_status, self.item_status)
+                                                    self.global_item_status, self.item_status, axis=0)
+            print(difficulties)
 
             logit_change = self.max_logit_change(abilities_old, difficulties_old,
                                                  abilities, difficulties)
@@ -176,9 +180,9 @@ class JMLE_base:
         self.abilities_logits = abilities
         self.difficulties_logits = difficulties
         self.n_iterations = iter_count
-        self.n_persons_n_items = self.response_matrix.shape
+        self.n_persons_n_items = self.resp_mat.shape
         self.estimation_time = finish - start
-        self.estimator_runs = self.estimator_runs + 1
+        #self.estimator_runs = self.estimator_runs + 1
         #self.person_sem = self.sem(var_mat, 'persons')
         #self.item_sem = self.sem(var_mat, 'items')
         #self.person_infit = self.infit(resid_mat, var_mat, 'persons')
