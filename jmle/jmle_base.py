@@ -27,6 +27,7 @@ class JMLE_base:
             raise ValueError("resp_mat along axis 1, __len__ of item_status and __len__ of anchor_items must match.")
 
 
+
         self.resp_mat = resp_mat
         self.person_status = person_status
         self.item_status = item_status
@@ -42,6 +43,12 @@ class JMLE_base:
     ########################### MATRIX FUNCTIONS ##############################
     ######### define Rasch function to create probabilities matrix
     def rasch(self, person, item):
+        '''
+        method to give rasch probability of person answering item correctly
+        :param person: logit ability of the person
+        :param item: logit difficulty of the item
+        :return: rasch probability of person answering item correctly
+        '''
         it_per = person - item
         return np.exp(it_per) / (1 + np.exp(it_per))
 
@@ -85,9 +92,9 @@ class JMLE_base:
 
         ######################### ESTIMATOR FUNCTIONS #############################
 
-    ## Calculate initial difficulties
-    def initial_difficulties(self, response_matrix, anchor_difficulties):
-        prop = response_matrix.mean(axis=0)
+    ## Calculate initial estimates
+    def initial_estimates(self, response_matrix, anchor_difficulties, axis):
+        prop = response_matrix.mean(axis=axis)
         init_diffs = np.log((1 - prop) / prop)
 
         init_diffs_mean = np.mean(init_diffs)
@@ -98,14 +105,10 @@ class JMLE_base:
 
         return adjusted_difficulties
 
-    ## Calculate initial abilities
-    def initial_abilities(self, response_matrix):
-        prop = response_matrix.mean(axis=1)
-        return np.log(prop / (1 - prop))
 
-    ## Update item difficulties
+    ## Update estimates
     def update_estimates(self, difficulties, residual_matrix, variance_matrix,
-                         global_status, item_status):
+                         global_status, item_status, axis):
         '''
         input: np.array of current item difficulties
                matrix of residuals
@@ -113,8 +116,8 @@ class JMLE_base:
         function: calculates the updated task difficulties
         output: np.array of updated item difficulties
         '''
-        sum_of_residuals = -1 * residual_matrix.sum(axis=0)
-        sum_of_variance = -1 * variance_matrix.sum(axis=0)
+        sum_of_residuals = -1 * residual_matrix.sum(axis=axis)
+        sum_of_variance = -1 * variance_matrix.sum(axis=axis)
 
         new_difficulties = difficulties - item_status * sum_of_residuals / sum_of_variance
         new_difficulties_mean = global_status * np.mean(new_difficulties)
@@ -122,19 +125,6 @@ class JMLE_base:
 
         return adjusted_difficulties
 
-    ## update person abilities
-    def update_abilities(self, abilities, residual_matrix, variance_matrix):
-        '''
-        input: np.array of current person abilities
-               matrix of residuals
-               matrix of variances
-        function: calculates the updated person abilities
-        output: np.array of updated person abilities
-        '''
-        sum_of_residuals = residual_matrix.sum(axis=1)
-        sum_of_variance = -1 * variance_matrix.sum(axis=1)
-        # abilities do not need to be adjusted
-        return (abilities - sum_of_residuals / sum_of_variance)
 
     ##### define function to check maximum logit change
     def max_logit_change(self, old_abilities, old_difficulties, new_abilities, new_difficulties):
@@ -146,18 +136,20 @@ class JMLE_base:
     def estimate(self):
         start = time()
 
-        #TODO must find out why there is a +1 here
+        #TODO must find out why there is a +1 here (Scaling from inital version?)
         resid_mat = self.resid_conv + 1
         logit_change = self.logit_conv + 1
 
         ######## start estimation
-        abilities = self.initial_abilities(self.resp_mat)
-        difficulties = self.initial_difficulties(self.resp_mat, self.anchor_difficulties,
+        abilities = self.initial_estimates(self.resp_mat, self.anchor_persons,
+                                           self.global_person_status, self.person_status)
+
+        difficulties = self.initial_estimtates(self.resp_mat, self.anchor_items,
                                                  self.global_item_status, self.item_status)
         ## initialize printables
         iter_count = 1
 
-        while logit_change > self.logit_convergence and np.max(resid_mat) > self.residual_convergence:
+        while logit_change > self.logit_conv and np.max(resid_mat) > self.resid_conv:
             # assign old abilities to check convergence at end of iteration
             abilities_old = abilities
             difficulties_old = difficulties
@@ -165,11 +157,13 @@ class JMLE_base:
             # calculate matrices used in iteration
             prob_mat = self.probability_matrix(abilities, difficulties)
             var_mat = self.variances_matrix(prob_mat)
-            resid_mat = self.residuals_matrix(self.response_matrix, prob_mat)
+            resid_mat = self.residuals_matrix(self.resp_mat, prob_mat)
 
             # re-estimate difficulties and abilities
-            abilities = self.update_abilities(abilities, resid_mat, var_mat)
-            difficulties = self.update_difficulties(difficulties, resid_mat, var_mat,
+            abilities = self.update_estimates(abilities, resid_mat, var_mat,
+                                              self.global_person_status, self.person_status)
+
+            difficulties = self.update_estimates(difficulties, resid_mat, var_mat,
                                                     self.global_item_status, self.item_status)
 
             logit_change = self.max_logit_change(abilities_old, difficulties_old,
