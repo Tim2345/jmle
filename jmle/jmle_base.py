@@ -112,7 +112,7 @@ class JMLE_base:
 
     ## Update estimates
     def update_estimates(self, difficulties, residual_matrix, variance_matrix,
-                         global_status, item_status, axis):
+                         global_status, status, axis):
         '''
         input: np.array of current item difficulties
                matrix of residuals
@@ -123,11 +123,13 @@ class JMLE_base:
         sum_of_residuals = -1 * residual_matrix.sum(axis=axis)
         sum_of_variance = -1 * variance_matrix.sum(axis=axis)
 
-        new_difficulties = difficulties - item_status * sum_of_residuals / sum_of_variance
-        new_difficulties_mean = global_status * np.mean(new_difficulties)
-        adjusted_difficulties = new_difficulties - new_difficulties_mean
+        new_difficulties = difficulties - status * sum_of_residuals / sum_of_variance
 
-        return adjusted_difficulties
+        if axis == 1:
+            new_difficulties_mean = global_status * np.mean(new_difficulties)
+            new_difficulties = new_difficulties - new_difficulties_mean
+
+        return new_difficulties
 
 
     ##### define function to check maximum logit change
