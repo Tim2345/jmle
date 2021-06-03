@@ -170,7 +170,7 @@ class JMLE_base:
 
             difficulties = self.update_estimates(difficulties, resid_mat, var_mat,
                                                     self.global_item_status, self.item_status, axis=0)
-            print(difficulties)
+
 
             logit_change = self.max_logit_change(abilities_old, difficulties_old,
                                                  abilities, difficulties)
